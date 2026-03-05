@@ -258,8 +258,9 @@ repos:
       - id: yamlfmt
         # Per-hook exclusion (Tier 2) - see "EXCLUSION PATTERN STRATEGY" section above
         # Workflows excluded: YAML syntax conflicts (${{ }}, multiline strings, run:)
+        # uv.lock excluded: Not YAML but yamlfmt processes all file types
         # Global exclusions (_legacy/, migration_sources/) applied automatically
-        exclude: ^\.github/workflows/
+        exclude: ^(\.github/workflows/|uv\.lock$)
 
   # ============================================================================
   # FILE HYGIENE - Essential file formatting (standard across ecosystem)
@@ -384,6 +385,25 @@ repos:
         # removing the freeze file + adding a migration in the same commit
         # is intentionally allowed (freeze is lifted).
         files: ^(deployment/database/migrations/|\.migration_freeze)
+        stages: [pre-commit]
+
+      # --------------------------------------------------------------------------
+      # No-env-file Hook - Prevent committing .env files
+      # Validates: No .env files are staged for commit (except .env.example)
+      # Scope: Triggered on all commits
+      # Purpose: Enforces use of ~/.omnibase/.env instead of repo-level .env files
+      # --------------------------------------------------------------------------
+      - id: no-env-file
+        name: Reject committed .env files (except .env.example)
+        entry: >-
+          bash -c 'ENV_FILES=$(git diff --cached --name-only | grep -E "(^|/)\\.env([._-].+)?$" | grep
+          -v "\\.env\\.example"); if [ -n "$ENV_FILES" ]; then
+            echo "BLOCKED: .env file(s) staged — use ~/.omnibase/.env instead. Run: git reset HEAD <file>";
+            exit 1;
+          fi'
+        language: system
+        pass_filenames: false
+        always_run: true
         stages: [pre-commit]
 
       # --------------------------------------------------------------------------
