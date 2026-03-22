@@ -42,6 +42,7 @@ from omniintelligence.review_pairing.prompts.adversarial_reviewer import (
     PROMPT_VERSION,
     SYSTEM_PROMPT,
     USER_PROMPT_TEMPLATE,
+    USER_PROMPT_TEMPLATE_PR,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,19 +67,22 @@ MODEL_REGISTRY: dict[str, ModelEndpointConfig] = {
         env_var="LLM_DEEPSEEK_R1_URL",
         default_url="http://192.168.86.200:8101",
         kind="reasoning",
-        timeout_seconds=120.0,
+        timeout_seconds=300.0,
+        api_model_id="mlx-community/DeepSeek-R1-Distill-Qwen-32B-bf16",
     ),
     "qwen3-coder": ModelEndpointConfig(
         env_var="LLM_CODER_URL",
         default_url="http://192.168.86.201:8000",
         kind="long_context",
         timeout_seconds=120.0,
+        api_model_id="cyankiwi/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit",
     ),
     "qwen3-14b": ModelEndpointConfig(
         env_var="LLM_CODER_FAST_URL",
         default_url="http://192.168.86.201:8001",
         kind="fast_review",
         timeout_seconds=60.0,
+        api_model_id="Qwen/Qwen3-14B-AWQ",
     ),
 }
 
@@ -96,16 +100,22 @@ _DEFAULT_TEMPERATURE: float = 0.3
 # ---------------------------------------------------------------------------
 
 
-def build_review_prompt(plan_content: str) -> tuple[str, str]:
+def build_review_prompt(
+    plan_content: str,
+    *,
+    review_type: str = "plan",
+) -> tuple[str, str]:
     """Construct system and user prompts for adversarial review.
 
     Args:
-        plan_content: Raw plan text to review.
+        plan_content: Raw content to review (plan text or PR diff).
+        review_type: "plan" for plan/design review, "pr" for PR diff review.
 
     Returns:
         Tuple of (system_prompt, user_prompt).
     """
-    user_prompt = USER_PROMPT_TEMPLATE.format(plan_content=plan_content)
+    template = USER_PROMPT_TEMPLATE_PR if review_type == "pr" else USER_PROMPT_TEMPLATE
+    user_prompt = template.format(plan_content=plan_content)
     return SYSTEM_PROMPT, user_prompt
 
 
@@ -135,6 +145,10 @@ async def call_model(
 ) -> str:
     """Invoke LLM via HandlerLlmOpenaiCompatible.
 
+    Uses infrastructure transport per ARCH-002. Sets a default
+    LOCAL_LLM_SHARED_SECRET if not configured, since the local LLM
+    endpoints do not verify HMAC signatures.
+
     Args:
         system_prompt: System prompt for the model.
         user_prompt: User prompt with plan content.
@@ -163,6 +177,11 @@ async def call_model(
         valid = ", ".join(sorted(MODEL_REGISTRY.keys()))
         raise ValueError(f"Unknown model '{model_key}'. Valid: {valid}")
 
+    # Ensure HMAC secret is set. Local LLM endpoints do not verify
+    # signatures, so a placeholder is sufficient for CLI use.
+    if not os.environ.get("LOCAL_LLM_SHARED_SECRET"):
+        os.environ["LOCAL_LLM_SHARED_SECRET"] = "cli-review-unsigned"  # noqa: S105  # pragma: allowlist secret
+
     base_url = os.environ.get(config.env_var, config.default_url)
 
     transport = TransportHolderLlmHttp(
@@ -174,7 +193,7 @@ async def call_model(
     request = ModelLlmInferenceRequest(
         base_url=base_url,
         operation_type=EnumLlmOperationType.CHAT_COMPLETION,
-        model=model_key,
+        model=config.api_model_id or model_key,
         messages=({"role": "user", "content": user_prompt},),
         system_prompt=system_prompt,
         max_tokens=_DEFAULT_MAX_TOKENS,
@@ -183,7 +202,16 @@ async def call_model(
     )
 
     response = await handler.handle(request)
-    return str(response.text)
+    text = str(response.generated_text)
+
+    # Qwen3 models emit <think>...</think> reasoning blocks before the
+    # actual response. Strip them to get the JSON content.
+    if "<think>" in text:
+        import re as _re
+
+        text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
+
+    return text
 
 
 def parse_review_response(raw_text: str) -> list[dict[str, Any]]:
@@ -380,6 +408,7 @@ async def async_parse_raw(
     plan_content: str,
     *,
     model: str = _DEFAULT_MODEL_KEY,
+    review_type: str = "plan",
     repo: str = "plan-review",
     pr_id: int = 0,
     commit_sha: str = "0000000",
@@ -393,8 +422,9 @@ async def async_parse_raw(
     4. Convert to canonical findings
 
     Args:
-        plan_content: Raw plan text to review.
+        plan_content: Raw content to review (plan text or PR diff).
         model: Model key for endpoint resolution.
+        review_type: "plan" for plan review, "pr" for PR diff review.
         repo: Repository slug.
         pr_id: Pull request number.
         commit_sha: Commit SHA.
@@ -405,7 +435,10 @@ async def async_parse_raw(
     try:
         # Validate model key.
         _resolve_model_url(model)
-        system_prompt, user_prompt = build_review_prompt(plan_content)
+        system_prompt, user_prompt = build_review_prompt(
+            plan_content,
+            review_type=review_type,
+        )
         raw_text = await call_model(system_prompt, user_prompt, model_key=model)
         parsed = parse_review_response(raw_text)
         findings = to_review_findings(
