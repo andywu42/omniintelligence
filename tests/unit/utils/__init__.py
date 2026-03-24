@@ -6,7 +6,6 @@ r"""Unit tests for the utils module.
 This package contains unit tests for src/omniintelligence/utils/.
 
 MIGRATION TODO: Move test_log_sanitizer.py Here
-=====================================================
 
 The file tests/unit/test_log_sanitizer.py tests src/omniintelligence/utils/log_sanitizer.py
 but currently lives in tests/unit/ instead of tests/unit/utils/ for historical reasons.
@@ -29,7 +28,7 @@ Files Requiring Pattern Updates When Moving:
    - tests/unit/test_log_sanitizer\.py -> tests/unit/utils/test_log_sanitizer\.py
    - tests/unit/(tools/|test_log_sanitizer\.py) -> tests/unit/(tools|utils)/
 
-2. .github/workflows/ci.yaml (4 locations):
+2. .github/workflows/ci.yml (4 locations):
    - Line ~25: Comment listing test directories
    - Line ~106: paths-filter 'tools_utils' filter
    - Line ~254: pytest command in lint job
