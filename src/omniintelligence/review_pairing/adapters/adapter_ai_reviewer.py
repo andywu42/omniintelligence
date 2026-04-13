@@ -222,7 +222,7 @@ def _resolve_model_url(model_key: str) -> str:
         valid = ", ".join(sorted(MODEL_REGISTRY.keys()))
         raise ValueError(f"Unknown model '{model_key}'. Valid: {valid}")
     config = MODEL_REGISTRY[model_key]
-    url = os.environ.get(config.env_var, "")
+    url = os.environ.get(config.env_var, config.default_url)
     if not url:
         raise ValueError(
             f"LLM endpoint not configured for '{model_key}'. "
@@ -316,7 +316,7 @@ async def call_model(
     if not os.environ.get("LOCAL_LLM_SHARED_SECRET"):
         os.environ["LOCAL_LLM_SHARED_SECRET"] = "cli-review-unsigned"  # noqa: S105  # pragma: allowlist secret
 
-    base_url = os.environ.get(config.env_var, "")
+    base_url = os.environ.get(config.env_var, config.default_url)
     if not base_url:
         raise ValueError(
             f"LLM endpoint not configured for '{model_key}'. "
