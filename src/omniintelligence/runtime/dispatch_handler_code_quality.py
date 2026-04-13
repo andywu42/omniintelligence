@@ -156,7 +156,9 @@ def _read_source_file(repo_name: str, source_path: str) -> str | None:
     """Best-effort read of source file for quality analysis."""
     try:
         omni_home = Path(os.environ["OMNI_HOME"])
-        omni_worktrees = Path(os.environ.get("OMNI_WORKTREES", str(omni_home.parent / "omni_worktrees")))
+        omni_worktrees = Path(
+            os.environ.get("OMNI_WORKTREES", str(omni_home.parent / "omni_worktrees"))
+        )
         for base in [omni_home, omni_worktrees]:
             full = base / repo_name / source_path
             if full.exists():
