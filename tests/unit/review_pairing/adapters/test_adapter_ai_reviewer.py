@@ -454,7 +454,7 @@ class TestModelRegistry:
 
         with patch.dict("os.environ", {}, clear=True):
             url = _resolve_model_url("deepseek-r1")
-        assert url == "http://192.168.86.200:8101"
+        assert url == "http://192.168.86.201:8001"
 
     def test_unknown_model_raises(self) -> None:
         from omniintelligence.review_pairing.adapters.adapter_ai_reviewer import (
